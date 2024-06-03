@@ -30,7 +30,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     const internalConfigManager = await InternalConfigManager.loadingConfigFrom(internalConfigPath);
     
     if (!internalConfigManager.getConfig().initialized) {
-        const message = "The Kotlin extension will automatically download a language server and a debug adapter to provide code completion, linting, debugging and more. If you prefer to install these yourself, you can provide custom paths or disable them in your settings. The language server and debug adapter require JDK 11+ and currently only support Maven and Gradle projects.";
+        const message = "HI The Kotlin extension will automatically download a language server and a debug adapter to provide code completion, linting, debugging and more. If you prefer to install these yourself, you can provide custom paths or disable them in your settings. The language server and debug adapter require JDK 11+ and currently only support Maven and Gradle projects.";
         const continueButton = "Ok, continue";
         const disableButton = "Disable";
         const result = await vscode.window.showInformationMessage(message, continueButton, disableButton);
@@ -70,6 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     let extensionApi = new ExtensionApi();
     
     if (langServerEnabled) {
+        LOG.info("Activating Language Server");
         initTasks.push(withSpinningStatus(context, async status => {
             extensionApi.kotlinApi = await activateLanguageServer(setupParams(status));
         }));
