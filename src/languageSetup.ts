@@ -13,60 +13,70 @@ import { fsExists } from "./util/fsUtils";
 import { ServerSetupParams } from "./setupParams";
 import { RunDebugCodeLens } from "./runDebugCodeLens";
 import { MainClassRequest, OverrideMemberRequest } from "./lspExtensions";
+ 
 
 /** Downloads and starts the language server. */
-export async function activateLanguageServer({ context, status, config, javaInstallation, javaOpts }: ServerSetupParams): Promise<KotlinApi> {
+export async function activateLanguageServer({ context, status, config, javaInstallation, javaOpts , outputChannel   }: ServerSetupParams): Promise<KotlinApi> {
     LOG.info('Activating Kotlin Language Server...');
     status.update("Activating Kotlin Language Server...");
     
     // Prepare language server
     const langServerInstallDir = path.join(context.globalStorageUri.fsPath, "langServerInstall");
     const customPath: string = config.get("languageServer.path");
+    const runServer: boolean = config.get("languageServer.run");
+    const tcpPort : number = config.get("languageServer.port");
     
-    if (!customPath) {
-        const langServerDownloader = new ServerDownloader("Kotlin Language Server", "kotlin-language-server", "server.zip", "server", langServerInstallDir);
-        
-        try {
-            await langServerDownloader.downloadServerIfNeeded(status);
-        } catch (error) {
-            console.error(error);
-            vscode.window.showWarningMessage(`Could not update/download Kotlin Language Server: ${error}`);
-            return;
-        }
-    }
-
-    const outputChannel = vscode.window.createOutputChannel("Kotlin");
-    context.subscriptions.push(outputChannel);
-    
-    const transportLayer = config.get("languageServer.transport");
-    let tcpPort: number = null;
     let env: any = { ...process.env };
 
-    if (javaInstallation.javaHome) {
-        env['JAVA_HOME'] = javaInstallation.javaHome;
-    }
-
-    if (javaOpts) {
-        env['JAVA_OPTS'] = javaOpts;
-    }
-
-    if (transportLayer == "tcp") {
-        tcpPort = config.get("languageServer.port");
-        
-        LOG.info(`Connecting via TCP, port: ${tcpPort}`);
-    } else if (transportLayer == "stdio") {
-        LOG.info("Connecting via Stdio.");
-
-        if (config.get("languageServer.debugAttach.enabled")) {
-            const autoSuspend = config.get("languageServer.debugAttach.autoSuspend");
-            const attachPort = config.get("languageServer.debugAttach.port");
-            env['KOTLIN_LANGUAGE_SERVER_OPTS'] = `-Xdebug -agentlib:jdwp=transport=dt_socket,address=${attachPort},server=y,quiet=y,suspend=${autoSuspend ? "y" : "n"}`;
+    // If Do not run server, will just try to connect to an exysting one
+    if (runServer===true) {
+        if (!customPath) {
+            const langServerDownloader = new ServerDownloader("Kotlin Language Server", "kotlin-language-server", "server.zip", "server", langServerInstallDir);
+            
+            try {
+                await langServerDownloader.downloadServerIfNeeded(status);
+            } catch (error) {
+                console.error(error);
+                vscode.window.showWarningMessage(`Could not update/download Kotlin Language Server: ${error}`);
+                return;
+            }
         }
-    } else {
-        LOG.info(`Unknown transport layer: ${transportLayer}`);
+    
+        
+        context.subscriptions.push(outputChannel);
+        
+        const transportLayer = config.get("languageServer.transport");
+        let tcpPort: number = null;
+        
+    
+        if (javaInstallation.javaHome) {
+            env['JAVA_HOME'] = javaInstallation.javaHome;
+        }
+    
+        if (javaOpts) {
+            env['JAVA_OPTS'] = javaOpts;
+        }
+    
+        if (transportLayer == "tcp") {
+           
+            
+            LOG.info(`Connecting via TCP, port: ${tcpPort}`);
+        } else if (transportLayer == "stdio") {
+            LOG.info("Connecting via Stdio.");
+    
+            if (config.get("languageServer.debugAttach.enabled")) {
+                const autoSuspend = config.get("languageServer.debugAttach.autoSuspend");
+                const attachPort = config.get("languageServer.debugAttach.port");
+                env['KOTLIN_LANGUAGE_SERVER_OPTS'] = `-Xdebug -agentlib:jdwp=transport=dt_socket,address=${attachPort},server=y,quiet=y,suspend=${autoSuspend ? "y" : "n"}`;
+            }
+        } else {
+            LOG.info(`Unknown transport layer: ${transportLayer}`);
+        }
+    
+        status.dispose();
     }
 
-    status.dispose();
+    
     
     const startScriptPath = customPath || path.resolve(langServerInstallDir, "server", "bin", correctScriptName("kotlin-language-server"));
 
@@ -75,7 +85,7 @@ export async function activateLanguageServer({ context, status, config, javaInst
         await fs.promises.mkdir(storagePath);
     }
 
-    const options = { outputChannel, startScriptPath, tcpPort, env, storagePath };
+    const options = { outputChannel, startScriptPath, tcpPort, env, storagePath , runServer };
     const languageClient = createLanguageClient(options);
 
     // Create the language client and start the client.
@@ -167,7 +177,8 @@ function createLanguageClient(options: {
     startScriptPath: string,
     tcpPort?: number,
     env?: any,
-    storagePath: string
+    storagePath: string,
+    runServer: boolean
 }): LanguageClient {
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
@@ -199,29 +210,40 @@ function createLanguageClient(options: {
         }
     }
     
-    // Ensure that start script can be executed
-    if (isOSUnixoid()) {
-        child_process.exec(`chmod +x ${options.startScriptPath}`);
-    }
-
-    // Start the child Java process
-    let serverOptions: ServerOptions;
-    
-    if (options.tcpPort) {
-        serverOptions = () => spawnLanguageServerProcessAndConnectViaTcp(options);
-    } else {
-        serverOptions = {
-            command: options.startScriptPath,
-            args: [],
-            options: {
-                cwd: vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath,
-                env: options.env
-            } // TODO: Support multi-root workspaces (and improve support for when no available is available)
+    // Run Server
+    //----------
+    if (options.runServer) {
+        // Ensure that start script can be executed
+        if (isOSUnixoid()) {
+            child_process.exec(`chmod +x ${options.startScriptPath}`);
         }
-        LOG.info("Creating client at {}", options.startScriptPath);
-    }
 
-    return new LanguageClient("kotlin", "Kotlin Language Client", serverOptions, clientOptions);
+        // Start the child Java process
+        let serverOptions: ServerOptions;
+
+        if (options.tcpPort) {
+            serverOptions = () => spawnLanguageServerProcessAndConnectViaTcp(options);
+        } else {
+            serverOptions = {
+                command: options.startScriptPath,
+                args: [],
+                options: {
+                    cwd: vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath,
+                    env: options.env
+                } // TODO: Support multi-root workspaces (and improve support for when no available is available)
+            }
+            LOG.info("Creating client at {}", options.startScriptPath);
+        }
+
+        return new LanguageClient("kotlin", "Kotlin Language Client", serverOptions, clientOptions);
+    } else {
+        let serverOptions: ServerOptions;
+        serverOptions = () => connectToLanguageServerViaTcp({outputChannel: options.outputChannel,tcpPort:options.tcpPort});
+        return new LanguageClient("kotlin", "Kotlin Language Client", serverOptions, clientOptions);
+    }
+    
+
+    //return new LanguageClient("kotlin", "Kotlin Language Client", serverOptions, clientOptions);
 }
 
 export function spawnLanguageServerProcessAndConnectViaTcp(options: {
@@ -248,6 +270,45 @@ export function spawnLanguageServerProcessAndConnectViaTcp(options: {
             proc.on("exit", (code, sig) => options.outputChannel.appendLine(`The language server exited, code: ${code}, signal: ${sig}`))
         });
         server.on("error", e => reject(e));
+    });
+}
+
+
+export function connectToLanguageServerViaTcp(options: {
+    outputChannel: vscode.OutputChannel,
+    tcpPort: number
+}): Promise<StreamInfo> {
+    return new Promise((resolve, reject) => {
+        LOG.info("Creating server.")
+        options.outputChannel.appendLine("Connecting to LSP Kotlin Server...")
+        const clientSocket = net.createConnection({
+            port: options.tcpPort, 
+            localAddress: "127.0.0.1"
+        })
+        clientSocket.on("connect",Socket => {
+            options.outputChannel.appendLine("Connected to LSP Server...")
+        })
+        resolve({ reader: clientSocket, writer: clientSocket })
+        /*client.on("connect",Socket => {
+            resolve({ reader: socket, writer: socket });
+        })
+        const server = net.createServer(socket => {
+            LOG.info("Closing server since client has connected.");
+            server.close();
+            resolve({ reader: socket, writer: socket });
+        });
+        // Wait for the first client to connect
+        server.listen(options.tcpPort, () => {
+            const tcpPort = (server.address() as net.AddressInfo).port.toString();
+            const proc = child_process.spawn(options.startScriptPath, ["--tcpClientPort", tcpPort]);
+            LOG.info("Creating client at {} via TCP port {}", options.startScriptPath, tcpPort);
+            
+            const outputCallback = data => options.outputChannel.append(`${data}`);
+            proc.stdout.on("data", outputCallback);
+            proc.stderr.on("data", outputCallback);
+            proc.on("exit", (code, sig) => options.outputChannel.appendLine(`The language server exited, code: ${code}, signal: ${sig}`))
+        });
+        server.on("error", e => reject(e));*/
     });
 }
 

@@ -9,7 +9,7 @@
     },
     "version": "0.2.36",
     "preview": true,
-    "publisher": "fwcd",
+    "publisher": "kissb",
     "license": "MIT",
     "categories": [
         "Programming Languages",
@@ -239,7 +239,12 @@
                 "kotlin.languageServer.port": {
                     "type": "integer",
                     "description": "The port to which the client will attempt to connect to. A random port is used if zero. Only used if the transport layer is TCP.",
-                    "default": 0
+                    "default": 9002
+                },
+                "kotlin.languageServer.runServer": {
+                    "type": "boolean",
+                    "description": "Run the server of just connect to one",
+                    "default": false
                 },
                 "kotlin.languageServer.debugAttach.enabled": {
                     "type": "boolean",

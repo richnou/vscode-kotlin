@@ -10,7 +10,7 @@ import { KotlinApi } from './lspExtensions';
 import { ServerSetupParams } from './setupParams';
 import { fsExists } from './util/fsUtils';
 import { LOG } from './util/logger';
-import { Status, StatusBarEntry } from './util/status';
+import { Status, StatusBarEntry } from './util/status'; 
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -28,9 +28,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     
     const internalConfigPath = path.join(globalStoragePath, "config.json");
     const internalConfigManager = await InternalConfigManager.loadingConfigFrom(internalConfigPath);
+
+    LOG.info("Opening KISSB Kotlin Extension");
+    const outputChannel = vscode.window.createOutputChannel("Kissb - Kotlin");
+    outputChannel.appendLine("Opening KISSB Kotlin Extension")
+    //status.update("Opening KISSB Kotlin Extension");
     
     if (!internalConfigManager.getConfig().initialized) {
-        const message = "HI The Kotlin extension will automatically download a language server and a debug adapter to provide code completion, linting, debugging and more. If you prefer to install these yourself, you can provide custom paths or disable them in your settings. The language server and debug adapter require JDK 11+ and currently only support Maven and Gradle projects.";
+        const message = "HI2 The Kotlin extension will automatically download a language server and a debug adapter to provide code completion, linting, debugging and more. If you prefer to install these yourself, you can provide custom paths or disable them in your settings. The language server and debug adapter require JDK 11+ and currently only support Maven and Gradle projects.";
         const continueButton = "Ok, continue";
         const disableButton = "Disable";
         const result = await vscode.window.showInformationMessage(message, continueButton, disableButton);
@@ -64,7 +69,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         status,
         config: kotlinConfig,
         javaInstallation,
-        javaOpts
+        javaOpts,
+        outputChannel
     });
 
     let extensionApi = new ExtensionApi();
